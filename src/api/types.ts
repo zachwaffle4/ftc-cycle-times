@@ -30,6 +30,11 @@ export type ApiV3EventType =
 
 export type ApiV3EventFormat = 'TRADITIONAL' | 'REMOTE' | 'HYBRID'
 
+export interface ApiV3Division {
+  eventCode: string
+  name: string
+}
+
 export interface ApiV3Event {
   code: string
   name: string
@@ -40,6 +45,7 @@ export interface ApiV3Event {
   regionCode: string
   leagueCode?: string | null
   parentEventCode?: string | null
+  divisions?: ApiV3Division[]
   venue?: string
   city?: string
   state?: string

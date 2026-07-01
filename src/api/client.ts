@@ -49,6 +49,18 @@ export async function fetchSeasons(): Promise<ApiV3Season[]> {
   return data.seasons
 }
 
+// Multi-division events (e.g. large championships) list their divisions' event
+// codes on the parent, but the divisions themselves — where the actual
+// qualification matches happen — never appear in the season-wide events list.
+// Fetch each division as its own event so it's reachable from event listings,
+// not just by typing its code in directly.
+async function expandDivisions(cmpYear: number, events: ApiV3Event[]): Promise<ApiV3Event[]> {
+  const divisionCodes = events.flatMap((e) => e.divisions?.map((d) => d.eventCode) ?? [])
+  if (!divisionCodes.length) return events
+  const divisionEvents = await Promise.all(divisionCodes.map((code) => fetchEventInfo(cmpYear, code)))
+  return [...events, ...divisionEvents.filter((e): e is ApiV3Event => e != null)]
+}
+
 const eventsCache = new Map<number, ApiV3Event[]>()
 export async function fetchSeasonEvents(cmpYear: number): Promise<ApiV3Event[]> {
   if (eventsCache.has(cmpYear)) return eventsCache.get(cmpYear)!
@@ -59,7 +71,8 @@ export async function fetchSeasonEvents(cmpYear: number): Promise<ApiV3Event[]> 
     return cached
   }
   const data = await getJson<{ events: ApiV3Event[] }>(`/api/v3/seasons/${cmpYear}/events`)
-  const events = data.events.filter((e) => e.published)
+  const published = data.events.filter((e) => e.published)
+  const events = await expandDivisions(cmpYear, published)
   eventsCache.set(cmpYear, events)
   lsSet(cacheKey, events, isPastSeason(cmpYear) ? null : 60 * 60 * 1000)
   return events
@@ -92,8 +105,13 @@ export async function fetchRegionLeagues(cmpYear: number, regionCode: string): P
 }
 
 export async function fetchEventInfo(cmpYear: number, eventCode: string): Promise<ApiV3Event | null> {
+  const cacheKey = `eventInfo_${cmpYear}_${eventCode}`
+  const cached = lsGet<ApiV3Event>(cacheKey)
+  if (cached) return cached
   try {
-    return await getJson<ApiV3Event>(`/api/v3/seasons/${cmpYear}/events/${eventCode}`)
+    const event = await getJson<ApiV3Event>(`/api/v3/seasons/${cmpYear}/events/${eventCode}`)
+    lsSet(cacheKey, event, isPastSeason(cmpYear) || isCompletedByToday(event) ? null : 60 * 60 * 1000)
+    return event
   } catch {
     return null
   }

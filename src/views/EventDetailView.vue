@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import DistributionChart from '../components/DistributionChart.vue'
 import MatchTable from '../components/MatchTable.vue'
 import NextUpCard from '../components/NextUpCard.vue'
 import ScheduleDeltaBarChart from '../components/ScheduleDeltaBarChart.vue'
 import ScheduleDeltaLineChart from '../components/ScheduleDeltaLineChart.vue'
 import StatsGrid from '../components/StatsGrid.vue'
+import { fetchEventInfo } from '../api/client'
+import type { ApiV3Event } from '../api/types'
 import { useEventRows, isLiveEvent } from '../composables/useEventRows'
 import { exportEventCsv } from '../lib/csv'
 import { cycleTimes, deltas, scheduledCycleTimes, scorePostDelays, scopedRows } from '../lib/stats'
@@ -15,6 +17,19 @@ const cmpYear = computed(() => Number(props.year))
 const eventCode = computed(() => props.code)
 
 const { event, teamCount, processed, loading, error } = useEventRows(cmpYear, eventCode)
+
+// A multi-division event's own page only holds its combined finals; the divisions
+// (where qualification play happens) are separate events not otherwise linked
+// from here, so surface them explicitly. Likewise surface a link back up to the
+// parent event when viewing a division.
+const parentEvent = ref<ApiV3Event | null>(null)
+watch(
+  () => event.value?.parentEventCode,
+  async (parentCode) => {
+    parentEvent.value = parentCode ? await fetchEventInfo(cmpYear.value, parentCode) : null
+  },
+  { immediate: true },
+)
 
 const rows = computed(() => processed.value?.rows ?? [])
 const qualRows = computed(() => scopedRows(rows.value, 'qual'))
@@ -72,6 +87,21 @@ function onExport(): void {
             · {{ event.startDate }}
             <template v-if="teamCount">· {{ teamCount }} teams</template>
             · {{ event.regionCode }}
+          </div>
+          <div v-if="parentEvent" style="font-size: 0.85rem; margin-top: 6px">
+            ↑ Part of
+            <router-link :to="`/event/${year}/${parentEvent.code}`">{{ parentEvent.name }}</router-link>
+          </div>
+          <div v-if="event.divisions?.length" style="font-size: 0.85rem; margin-top: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap">
+            Divisions:
+            <router-link
+              v-for="d in event.divisions"
+              :key="d.eventCode"
+              :to="`/event/${year}/${d.eventCode}`"
+              class="btn-ghost"
+            >
+              {{ d.name }}
+            </router-link>
           </div>
         </div>
         <h2>Cycle Time Statistics (Qual)</h2>

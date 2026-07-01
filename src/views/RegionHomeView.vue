@@ -96,6 +96,10 @@ const nonLeagueEvents = computed(() =>
             <div class="event-row-info">
               <span class="event-row-name">{{ e.name }} <span style="color: var(--muted); font-weight: 400">({{ e.code }})</span></span>
               <span class="event-row-loc">{{ [e.city, e.state].filter(Boolean).join(', ') }}</span>
+              <div v-if="e.divisions?.length" style="margin-top: 4px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 0.78rem">
+                <span style="color: var(--muted)">Divisions:</span>
+                <router-link v-for="d in e.divisions" :key="d.eventCode" :to="`/event/${year}/${d.eventCode}`">{{ d.name }}</router-link>
+              </div>
             </div>
             <div class="event-row-right">
               <span class="event-status" :class="eventStatus(e.startDate, e.endDate).cls">{{ eventStatus(e.startDate, e.endDate).label }}</span>
