@@ -38,7 +38,6 @@ export function useAggregateStats(cmpYear: Ref<number>, events: Ref<ApiV3Event[]
   async function load(): Promise<void> {
     loading.value = true
     error.value = null
-    excluded.value = new Set()
     progress.value = { done: 0, total: events.value.length }
     try {
       const loaded = await mapWithConcurrency(events.value, CONCURRENCY, async (event) => {
@@ -56,6 +55,10 @@ export function useAggregateStats(cmpYear: Ref<number>, events: Ref<ApiV3Event[]
         } satisfies AggregateEntry
       })
       entries.value = loaded
+      // Scrimmages are informal/practice events with less rigorous scheduling —
+      // pre-exclude them from pooled stats by default (same mechanism as manually
+      // unchecking an event), but leave them visible/re-includable in the table.
+      excluded.value = new Set(loaded.flatMap((e, i) => (e.event.type === 'SCRIMMAGE' ? [i] : [])))
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     } finally {
