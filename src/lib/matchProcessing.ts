@@ -10,6 +10,7 @@ export interface MatchRow {
   sortOrder: number
   phase: MatchPhase
   tournamentLevel: ApiV3TournamentLevel
+  field: number
   /** Scheduled start, unix seconds. */
   scheduled: number | null
   /** Actual start, unix seconds. */
@@ -103,6 +104,7 @@ function processMatchGroup(matches: ApiV3Match[], phase: MatchPhase): MatchRow[]
       sortOrder: matchTournamentOrder(m),
       phase,
       tournamentLevel: m.tournamentLevel,
+      field: m.field,
       scheduled,
       actual,
       postTime,

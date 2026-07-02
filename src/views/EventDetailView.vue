@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import DistributionChart from '../components/DistributionChart.vue'
+import FieldBreakdownTable from '../components/FieldBreakdownTable.vue'
 import MatchTable from '../components/MatchTable.vue'
 import NextUpCard from '../components/NextUpCard.vue'
 import ScheduleDeltaBarChart from '../components/ScheduleDeltaBarChart.vue'
@@ -120,6 +121,8 @@ function onExport(): void {
           <ScheduleDeltaLineChart :rows="qualRows" />
         </div>
       </div>
+
+      <FieldBreakdownTable :rows="qualRows" />
 
       <div v-if="playoffRows.length" class="card">
         <h2>Playoff Statistics</h2>
