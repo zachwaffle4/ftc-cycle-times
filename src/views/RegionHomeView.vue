@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { fetchRegionLeagues, fetchRegions, fetchSeasonEvents } from '../api/client'
 import type { ApiV3Event, ApiV3League } from '../api/types'
 import { eventStatus } from '../lib/format'
+import { buildLeagueNameMap } from '../lib/leagueNames'
 
 const props = defineProps<{ year: string; regionCode: string }>()
 const cmpYear = computed(() => Number(props.year))
@@ -44,15 +45,14 @@ const leagueCounts = computed(() => {
 
 // The FTC leagues-list endpoint can come back empty even when events reference a
 // leagueCode (observed live — likely an API-side issue), so fall back to a
-// synthetic league entry (code as name) for any leagueCode the endpoint missed.
+// derived name (see buildLeagueNameMap) for any leagueCode the endpoint missed.
 // This guarantees every event with a leagueCode is still reachable via a league page.
-const sortedLeagues = computed(() => {
-  const known = new Map(leagues.value.map((l) => [l.code, l]))
-  for (const code of leagueCounts.value.keys()) {
-    if (!known.has(code)) known.set(code, { code, name: code })
-  }
-  return [...known.values()].filter((l) => (leagueCounts.value.get(l.code) ?? 0) > 0).sort((a, b) => a.name.localeCompare(b.name))
-})
+const leagueNames = computed(() => buildLeagueNameMap(leagues.value, events.value))
+const sortedLeagues = computed(() =>
+  [...leagueCounts.value.keys()]
+    .map((code) => ({ code, name: leagueNames.value.get(code) ?? code }))
+    .sort((a, b) => a.name.localeCompare(b.name)),
+)
 
 const nonLeagueEvents = computed(() =>
   [...events.value].filter((e) => !e.leagueCode).sort((a, b) => a.startDate.localeCompare(b.startDate)),

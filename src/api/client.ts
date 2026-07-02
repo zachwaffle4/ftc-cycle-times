@@ -1,5 +1,6 @@
 import { CURRENT_YEAR, CURRENT_YEAR_ROWS_TTL_MS } from '../config'
 import { lsGet, lsSet } from './cache'
+import { fetchRegionLeaguesV2 } from './clientV2'
 import type {
   ApiV3Event,
   ApiV3EventParticipants,
@@ -87,19 +88,34 @@ export async function fetchRegions(cmpYear: number): Promise<ApiV3Region[]> {
   return data.regions
 }
 
+// The v3 leagues-list endpoint is currently broken in production — every
+// regionCode-path request returns a "NULLCHECK_FAILED" 400, verified across
+// many regions. Fall back to the legacy v2 API (which has a working,
+// query-param-based equivalent) before giving up. Remove the v2 fallback once
+// FTC's v3 region-scoped endpoints work again.
 export async function fetchRegionLeagues(cmpYear: number, regionCode: string): Promise<ApiV3League[]> {
   const cacheKey = `leagues_${cmpYear}_${regionCode}`
   const cached = lsGet<ApiV3League[]>(cacheKey)
   if (cached) return cached
+
+  const ttl = isPastSeason(cmpYear) ? null : 24 * 60 * 60 * 1000
   try {
     const data = await getJson<{ leagues: ApiV3League[] }>(
       `/api/v3/seasons/${cmpYear}/regions/${regionCode}/leagues`,
     )
-    lsSet(cacheKey, data.leagues, isPastSeason(cmpYear) ? null : 24 * 60 * 60 * 1000)
+    lsSet(cacheKey, data.leagues, ttl)
     return data.leagues
   } catch {
-    // Fails soft: a region with no leagues (or an API hiccup) shouldn't block
-    // rendering that region's non-league events.
+    // v3 failed — fall through to v2.
+  }
+
+  try {
+    const leagues = await fetchRegionLeaguesV2(cmpYear, regionCode)
+    lsSet(cacheKey, leagues, ttl)
+    return leagues
+  } catch {
+    // Fails soft: a region with no leagues (or both APIs being unavailable)
+    // shouldn't block rendering that region's non-league events.
     return []
   }
 }

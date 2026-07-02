@@ -8,6 +8,7 @@ import { fetchRegionLeagues, fetchSeasonEvents } from '../api/client'
 import type { ApiV3Event } from '../api/types'
 import { useAggregateStats } from '../composables/useAggregateStats'
 import { exportAggCsv } from '../lib/csv'
+import { deriveLeagueName } from '../lib/leagueNames'
 import { deltas, mean } from '../lib/stats'
 
 const props = defineProps<{ year: string; regionCode: string; leagueCode: string }>()
@@ -26,10 +27,13 @@ async function loadEvents(): Promise<void> {
       fetchRegionLeagues(cmpYear.value, props.regionCode),
       fetchSeasonEvents(cmpYear.value),
     ])
-    leagueName.value = leagues.find((l) => l.code === props.leagueCode)?.name ?? props.leagueCode
     allEvents.value = events
       .filter((e) => e.regionCode === props.regionCode && e.leagueCode === props.leagueCode)
       .sort((a, b) => a.startDate.localeCompare(b.startDate))
+    // See deriveLeagueName: the leagues-list endpoint is currently broken live,
+    // so fall back to deriving a name from this league's own events.
+    leagueName.value =
+      leagues.find((l) => l.code === props.leagueCode)?.name ?? deriveLeagueName(props.leagueCode, allEvents.value)
   } catch (e) {
     eventsError.value = e instanceof Error ? e.message : String(e)
   } finally {

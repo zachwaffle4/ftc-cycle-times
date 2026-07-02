@@ -3,12 +3,14 @@ import { computed, onMounted, ref, watch } from 'vue'
 import AggregateEventTable from '../components/AggregateEventTable.vue'
 import CtByMonthChart from '../components/CtByMonthChart.vue'
 import DistributionChart from '../components/DistributionChart.vue'
+import LeagueBreakdownTable from '../components/LeagueBreakdownTable.vue'
 import ScheduleDeltaBarChart from '../components/ScheduleDeltaBarChart.vue'
 import StatsGrid from '../components/StatsGrid.vue'
-import { fetchRegions, fetchSeasonEvents } from '../api/client'
-import type { ApiV3Event } from '../api/types'
+import { fetchRegionLeagues, fetchRegions, fetchSeasonEvents } from '../api/client'
+import type { ApiV3Event, ApiV3League } from '../api/types'
 import { useAggregateStats } from '../composables/useAggregateStats'
 import { exportAggCsv } from '../lib/csv'
+import { buildLeagueNameMap } from '../lib/leagueNames'
 import { buildMonthlySeries } from '../lib/monthlySeries'
 
 const props = defineProps<{ year: string; regionCode: string }>()
@@ -16,6 +18,7 @@ const cmpYear = computed(() => Number(props.year))
 
 const regionName = ref(props.regionCode)
 const allEvents = ref<ApiV3Event[]>([])
+const leagues = ref<ApiV3League[]>([])
 const loadingEvents = ref(true)
 const eventsError = ref<string | null>(null)
 
@@ -23,8 +26,13 @@ async function loadEvents(): Promise<void> {
   loadingEvents.value = true
   eventsError.value = null
   try {
-    const [regions, events] = await Promise.all([fetchRegions(cmpYear.value), fetchSeasonEvents(cmpYear.value)])
+    const [regions, leagueList, events] = await Promise.all([
+      fetchRegions(cmpYear.value),
+      fetchRegionLeagues(cmpYear.value, props.regionCode),
+      fetchSeasonEvents(cmpYear.value),
+    ])
     regionName.value = regions.find((r) => r.code === props.regionCode)?.name ?? props.regionCode
+    leagues.value = leagueList
     allEvents.value = events.filter((e) => e.regionCode === props.regionCode)
   } catch (e) {
     eventsError.value = e instanceof Error ? e.message : String(e)
@@ -56,6 +64,7 @@ const tableEntries = computed(() =>
 )
 
 const monthly = computed(() => buildMonthlySeries(includedEntries.value))
+const leagueNames = computed(() => buildLeagueNameMap(leagues.value, allEvents.value))
 
 function onExport(): void {
   exportAggCsv(`${props.regionCode}_season`.toLowerCase(), includedEntries.value)
@@ -89,6 +98,7 @@ function onExport(): void {
         <h2>Cycle Time by Month</h2>
         <CtByMonthChart :labels="monthly.labels" :actual-data="monthly.actualData" :median-data="monthly.medianData" :sched-data="monthly.schedData" />
       </div>
+      <LeagueBreakdownTable :entries="includedEntries" :league-names="leagueNames" :year="cmpYear" :region-code="regionCode" />
       <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px">
           <h2 style="margin-bottom: 0">By Event</h2>

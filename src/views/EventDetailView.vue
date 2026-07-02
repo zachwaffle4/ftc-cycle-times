@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import DistributionChart from '../components/DistributionChart.vue'
+import DivisionBreakdownTable from '../components/DivisionBreakdownTable.vue'
 import FieldBreakdownTable from '../components/FieldBreakdownTable.vue'
 import MatchTable from '../components/MatchTable.vue'
 import NextUpCard from '../components/NextUpCard.vue'
@@ -122,6 +123,7 @@ function onExport(): void {
         </div>
       </div>
 
+      <DivisionBreakdownTable v-if="event.divisions?.length" :cmp-year="cmpYear" :divisions="event.divisions" />
       <FieldBreakdownTable :rows="qualRows" />
 
       <div v-if="playoffRows.length" class="card">
