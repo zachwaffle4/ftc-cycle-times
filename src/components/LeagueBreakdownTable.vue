@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { AggregateEntry } from '../composables/useAggregateStats'
 import { fmtDeltaObj, fmtDur } from '../lib/format'
 import { cycleTimes, deltas, mean, median, stddev } from '../lib/stats'
@@ -16,9 +16,11 @@ interface LeagueRow {
   name: string
   eventCount: number
   matchesPlayed: number
-  cts: number[]
-  ds: number[]
   outlierCount: number
+  meanCt: number | null
+  medianCt: number | null
+  stdDevCt: number | null
+  avgDelta: number | null
 }
 
 const leagueRows = computed<LeagueRow[]>(() => {
@@ -47,13 +49,71 @@ const leagueRows = computed<LeagueRow[]>(() => {
       name: props.leagueNames.get(code) ?? code,
       eventCount: group.length,
       matchesPlayed,
-      cts,
-      ds,
       outlierCount,
+      meanCt: cts.length ? mean(cts) : null,
+      medianCt: cts.length ? median(cts) : null,
+      stdDevCt: cts.length >= 2 ? stddev(cts) : null,
+      avgDelta: ds.length ? mean(ds) : null,
     })
   }
-  return rows.sort((a, b) => a.name.localeCompare(b.name))
+  return rows
 })
+
+const cols = [
+  { label: 'League', sortable: true },
+  { label: 'Events', sortable: true },
+  { label: 'Matches', sortable: true },
+  { label: 'Mean CT', sortable: true },
+  { label: 'Median CT', sortable: true },
+  { label: 'Std Dev', sortable: true },
+  { label: 'Avg Δ Schedule', sortable: true },
+  { label: '', sortable: false },
+]
+
+const sortCol = ref<number | null>(null)
+const sortDir = ref<'asc' | 'desc'>('asc')
+
+function sortVal(l: LeagueRow, col: number): string | number {
+  switch (col) {
+    case 0:
+      return l.name
+    case 1:
+      return l.eventCount
+    case 2:
+      return l.matchesPlayed
+    case 3:
+      return l.meanCt ?? Infinity
+    case 4:
+      return l.medianCt ?? Infinity
+    case 5:
+      return l.stdDevCt ?? Infinity
+    case 6:
+      return l.avgDelta ?? Infinity
+    default:
+      return 0
+  }
+}
+
+const sortedRows = computed(() => {
+  const rows = [...leagueRows.value]
+  const col = sortCol.value ?? 0
+  rows.sort((a, b) => {
+    const va = sortVal(a, col)
+    const vb = sortVal(b, col)
+    const cmp = typeof va === 'string' ? va.localeCompare(vb as string) : (va as number) - (vb as number)
+    return sortDir.value === 'asc' ? cmp : -cmp
+  })
+  return rows
+})
+
+function sortBy(col: number): void {
+  if (sortCol.value === col) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortCol.value = col
+    sortDir.value = 'asc'
+  }
+}
 </script>
 
 <template>
@@ -63,28 +123,29 @@ const leagueRows = computed<LeagueRow[]>(() => {
       <table>
         <thead>
           <tr>
-            <th>League</th>
-            <th>Events</th>
-            <th>Matches</th>
-            <th>Mean CT</th>
-            <th>Median CT</th>
-            <th>Std Dev</th>
-            <th>Avg Δ Schedule</th>
-            <th></th>
+            <th
+              v-for="(c, ci) in cols"
+              :key="ci"
+              :class="{ sortable: c.sortable, 'sort-active': sortCol === ci }"
+              @click="c.sortable && sortBy(ci)"
+            >
+              {{ c.label }}
+              <i v-if="c.sortable" style="margin-left: 4px; opacity: 0.5; font-style: normal">{{ sortCol === ci ? (sortDir === 'asc' ? '▲' : '▼') : '▲' }}</i>
+            </th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="l in leagueRows" :key="l.code">
+          <tr v-for="l in sortedRows" :key="l.code">
             <td><strong>{{ l.name }}</strong></td>
             <td class="muted-cell">{{ l.eventCount }}</td>
             <td class="muted-cell">
               {{ l.matchesPlayed }}
               <span v-if="l.outlierCount" style="font-size: 0.78rem">({{ l.outlierCount }} outlier{{ l.outlierCount === 1 ? '' : 's' }})</span>
             </td>
-            <td>{{ l.cts.length ? fmtDur(mean(l.cts)) : '—' }}</td>
-            <td>{{ l.cts.length ? fmtDur(median(l.cts)) : '—' }}</td>
-            <td class="muted-cell">{{ l.cts.length >= 2 ? fmtDur(stddev(l.cts)) : '—' }}</td>
-            <td :class="l.ds.length ? fmtDeltaObj(mean(l.ds)).cls : ''">{{ l.ds.length ? fmtDeltaObj(mean(l.ds)).text : '—' }}</td>
+            <td>{{ fmtDur(l.meanCt) }}</td>
+            <td>{{ fmtDur(l.medianCt) }}</td>
+            <td class="muted-cell">{{ fmtDur(l.stdDevCt) }}</td>
+            <td :class="l.avgDelta != null ? fmtDeltaObj(l.avgDelta).cls : ''">{{ fmtDeltaObj(l.avgDelta).text }}</td>
             <td>
               <router-link :to="`/league/${year}/${regionCode}/${l.code}`" class="btn-ghost">View →</router-link>
             </td>
