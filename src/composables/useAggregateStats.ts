@@ -1,6 +1,7 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import { fetchEventMatches, fetchEventTeamCount } from '../api/client'
-import type { ApiV3Event } from '../api/types'
+import type { ApiV3Event, ApiV3Match } from '../api/types'
+import { cycleTimeAttribution } from './cycleTimeAttribution'
 import { processMatches, type MatchRow } from '../lib/matchProcessing'
 import { cycleTimes, deltas, scheduledCycleTimes } from '../lib/stats'
 
@@ -9,6 +10,12 @@ export interface AggregateEntry {
   rows: MatchRow[] | undefined
   teamCount?: number
   matchesPerTeam?: number
+}
+
+interface RawEntry {
+  event: ApiV3Event
+  matches: ApiV3Match[] | null
+  teamCount?: number
 }
 
 const CONCURRENCY = 4
@@ -27,13 +34,27 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
 }
 
 /** Fetches + processes match data for a set of events (concurrency-limited), and
- *  exposes pooled qual/playoff cycle-time stats across all non-excluded events. */
+ *  exposes pooled qual/playoff cycle-time stats across all non-excluded events.
+ *  Raw match data is kept separately from the derived rows so toggling the
+ *  cycle-time attribution setting re-processes in place, with no refetch. */
 export function useAggregateStats(cmpYear: Ref<number>, events: Ref<ApiV3Event[]>) {
-  const entries = ref<AggregateEntry[]>([])
+  const rawEntries = ref<RawEntry[]>([])
   const loading = ref(true)
   const error = ref<string | null>(null)
   const progress = ref({ done: 0, total: 0 })
   const excluded = ref(new Set<number>())
+
+  const entries = computed<AggregateEntry[]>(() =>
+    rawEntries.value.map((e) => {
+      const processed = e.matches ? processMatches(e.matches, cycleTimeAttribution.value) : undefined
+      return {
+        event: e.event,
+        rows: processed?.rows,
+        teamCount: e.teamCount,
+        matchesPerTeam: processed?.matchesPerTeam,
+      }
+    }),
+  )
 
   async function load(): Promise<void> {
     loading.value = true
@@ -45,16 +66,10 @@ export function useAggregateStats(cmpYear: Ref<number>, events: Ref<ApiV3Event[]
           fetchEventMatches(cmpYear.value, event.code),
           fetchEventTeamCount(cmpYear.value, event.code),
         ])
-        const processed = matches ? processMatches(matches) : undefined
         progress.value = { done: progress.value.done + 1, total: events.value.length }
-        return {
-          event,
-          rows: processed?.rows,
-          teamCount,
-          matchesPerTeam: processed?.matchesPerTeam,
-        } satisfies AggregateEntry
+        return { event, matches, teamCount } satisfies RawEntry
       })
-      entries.value = loaded
+      rawEntries.value = loaded
       // Scrimmages are informal/practice events with less rigorous scheduling —
       // pre-exclude them from pooled stats by default (same mechanism as manually
       // unchecking an event), but leave them visible/re-includable in the table.

@@ -3,6 +3,12 @@ import type { ApiV3Match, ApiV3TournamentLevel } from '../api/types'
 
 export type MatchPhase = 'qual' | 'playoff'
 
+/** Which match a cycle-time gap gets attributed to: the one that just
+ *  started ('later', this app's original convention — "time since the
+ *  previous match") or the one that just finished ('earlier' — "time until
+ *  the next match", matching the FTCLive local-server tool's convention). */
+export type CycleTimeAttribution = 'later' | 'earlier'
+
 export interface MatchRow {
   matchNum: number
   matchLabel: string
@@ -17,9 +23,11 @@ export interface MatchRow {
   actual: number | null
   /** Score-posted time, unix seconds. */
   postTime: number | null
-  /** Seconds between this match's actual start and the previous played match's. */
+  /** Seconds between two consecutive played matches' actual starts, attributed to
+   *  the earlier or later of the pair depending on CycleTimeAttribution. */
   cycleTime: number | null
-  /** Seconds between this match's scheduled start and the previous match's. */
+  /** Seconds between two consecutive matches' scheduled starts, attributed the
+   *  same way as cycleTime. */
   scheduledCT: number | null
   isPostBreak: boolean
   /** scheduled - actual: positive = running ahead, negative = running behind. */
@@ -74,7 +82,7 @@ function iqrOutlierBounds(values: number[]): { lo: number; hi: number } {
   return { lo: q1 - 1.5 * iqr, hi: q3 + 1.5 * iqr }
 }
 
-function processMatchGroup(matches: ApiV3Match[], phase: MatchPhase): MatchRow[] {
+function processMatchGroup(matches: ApiV3Match[], phase: MatchPhase, attribution: CycleTimeAttribution): MatchRow[] {
   const sorted = [...matches].sort((a, b) => matchTournamentOrder(a) - matchTournamentOrder(b))
 
   const rows: MatchRow[] = sorted.map((m, i) => {
@@ -82,13 +90,11 @@ function processMatchGroup(matches: ApiV3Match[], phase: MatchPhase): MatchRow[]
     const actual = toEpochSeconds(m.startTime)
     const postTime = toEpochSeconds(m.postTime)
 
-    let scheduledCT: number | null = null
     let isPostBreak = i === 0
     if (i > 0) {
       const prevScheduled = toEpochSeconds(sorted[i - 1].scheduledStartTime)
       const schedGap = scheduled != null && prevScheduled != null ? scheduled - prevScheduled : null
       if (schedGap != null && schedGap > BREAK_GAP) isPostBreak = true
-      else scheduledCT = schedGap
     }
 
     const delta = scheduled != null && actual != null ? scheduled - actual : null
@@ -109,7 +115,7 @@ function processMatchGroup(matches: ApiV3Match[], phase: MatchPhase): MatchRow[]
       actual,
       postTime,
       cycleTime: null,
-      scheduledCT,
+      scheduledCT: null,
       isPostBreak,
       delta,
       scorePostDelay,
@@ -123,20 +129,34 @@ function processMatchGroup(matches: ApiV3Match[], phase: MatchPhase): MatchRow[]
     }
   })
 
+  // Scheduled cycle time, in schedule order — attributed to whichever row the
+  // current `attribution` setting points at, same as actual cycle time below.
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i].isPostBreak) continue
+    const prevScheduled = rows[i - 1].scheduled
+    const schedGap = rows[i].scheduled != null && prevScheduled != null ? (rows[i].scheduled as number) - prevScheduled : null
+    if (schedGap == null) continue
+    const owner = attribution === 'earlier' ? rows[i - 1] : rows[i]
+    owner.scheduledCT = schedGap
+  }
+
   // Compute cycle times in actual play order; fall back to actual-gap break detection
   // only when schedule data is unavailable (running late would otherwise inflate gaps).
+  // The gap between a match and its predecessor is attributed to whichever row the
+  // current `attribution` setting points at — see CycleTimeAttribution.
   const played = rows.filter((r) => r.actual != null).sort((a, b) => (a.actual as number) - (b.actual as number))
   for (let i = 1; i < played.length; i++) {
     const gap = (played[i].actual as number) - (played[i - 1].actual as number)
+    const owner = attribution === 'earlier' ? played[i - 1] : played[i]
     if (played[i].scheduled == null || played[i - 1].scheduled == null) {
       if (gap > BREAK_GAP) {
         played[i].isPostBreak = true
       } else {
-        played[i].cycleTime = gap
+        owner.cycleTime = gap
         played[i].isPostBreak = false
       }
     } else if (!played[i].isPostBreak) {
-      played[i].cycleTime = gap
+      owner.cycleTime = gap
     }
   }
 
@@ -164,12 +184,15 @@ function processMatchGroup(matches: ApiV3Match[], phase: MatchPhase): MatchRow[]
   return rows
 }
 
-export function processMatches(matches: ApiV3Match[]): ProcessedMatches {
+export function processMatches(matches: ApiV3Match[], attribution: CycleTimeAttribution = 'earlier'): ProcessedMatches {
   const qualMatches = matches.filter((m) => m.tournamentLevel === 'QUALIFICATION')
   const playoffMatches = matches.filter((m) => m.tournamentLevel === 'SEMIFINAL' || m.tournamentLevel === 'FINAL' || m.tournamentLevel === 'PLAYOFF')
   // PRACTICE matches are intentionally excluded — not officially scheduled play.
 
-  const rows = [...processMatchGroup(qualMatches, 'qual'), ...processMatchGroup(playoffMatches, 'playoff')]
+  const rows = [
+    ...processMatchGroup(qualMatches, 'qual', attribution),
+    ...processMatchGroup(playoffMatches, 'playoff', attribution),
+  ]
 
   rows.sort((a, b) => {
     if (a.actual != null && b.actual != null) return a.actual - b.actual

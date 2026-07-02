@@ -58,9 +58,11 @@ const lastDeltaLabel = computed(() => {
   if (d >= -60) return 'On Time'
   return 'Behind'
 })
-const prevCtSub = computed(() =>
-  lastPlayed.value?.cycleTime != null ? `prev CT ${fmtDur(lastPlayed.value.cycleTime)}` : null,
-)
+// Under the 'earlier' attribution mode the most-recently-played match never
+// owns a cycle time yet (its "next" hasn't played) — fall back to the most
+// recent row that does have one, regardless of attribution mode.
+const mostRecentCycleTime = computed(() => [...props.qualRows].reverse().find((r) => r.cycleTime != null)?.cycleTime ?? null)
+const prevCtSub = computed(() => (mostRecentCycleTime.value != null ? `prev CT ${fmtDur(mostRecentCycleTime.value)}` : null))
 </script>
 
 <template>
