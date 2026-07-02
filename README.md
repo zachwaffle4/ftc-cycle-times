@@ -32,16 +32,14 @@ Requires [Bun](https://bun.sh).
 
 ```sh
 bun install
-cp .env.example .env             # then fill in VITE_FTC_API_KEY — see below
-cp .dev.vars.example .dev.vars   # optional, for the v2 fallback — see below
+cp .env.example .env   # then fill in VITE_FTC_API_KEY — see below
 bun run dev
 ```
 
 Other scripts: `bun run build`, `bun run preview`, `bun run deploy` (deploys via Wrangler).
 
-The dev/build/deploy commands all run through [`@cloudflare/vite-plugin`](https://developers.cloudflare.com/workers/vite-plugin/),
-which serves the app through a Cloudflare Worker (`worker/index.ts`) both locally
-and in production — this is what lets the v2 API fallback proxy below run in dev too.
+The dev/build/deploy commands run through [`@cloudflare/vite-plugin`](https://developers.cloudflare.com/workers/vite-plugin/),
+which builds/serves the app for Cloudflare Pages both locally and in production.
 
 ## API key
 
@@ -49,25 +47,6 @@ Get a key from the [FTC Data API account page](https://ftc-scoring.firstinspires
 and set it as `VITE_FTC_API_KEY` in `.env`. Per the API's own docs, v3 keys are
 meant to be distributed with the applications that use them and don't need to be
 kept secret — but each key is tied to a FIRST account, so don't commit your `.env`.
-
-## v2 API fallback
-
-A handful of v3 endpoints (region-scoped ones, like listing a region's leagues)
-are currently broken in production. Where that happens, the app falls back to
-the legacy [FTC Events API v2](https://ftc-events.firstinspires.org/try-it-out/index.html),
-proxied through `worker/index.ts` rather than called directly from the browser,
-because v2 sends no CORS headers and its docs explicitly warn against embedding
-a v2 username/token in client-side code.
-
-To enable the fallback, request v2 credentials from the same try-it-out page,
-then set `FTC_V2_USERNAME`/`FTC_V2_TOKEN` in `.dev.vars` for local dev (picked
-up automatically by Wrangler — never committed) and as Worker secrets in
-production via `wrangler secret put FTC_V2_TOKEN` (or the Cloudflare dashboard).
-Without credentials configured, the app falls back further to a heuristic
-league-name guesser (see `src/lib/leagueNames.ts`) instead of failing outright.
-
-Note v2 numbers seasons by kickoff year, one less than v3's `cmpYear` — e.g.
-cmpYear 2026 is v2 season 2025. The proxy handles this conversion.
 
 ## License
 

@@ -14,20 +14,17 @@ function cleanPrefix(prefix: string): string {
   return prefix.replace(/[\s#\-–—.:]*\d*\s*$/, '').trim()
 }
 
-/** FTC's region-scoped endpoints (including the leagues list) are currently
- * broken in production — every regionCode-path request returns a
- * "NULLCHECK_FAILED" 400, verified across many regions — so there's no way to
- * fetch a league's real display name from the API right now. As a workaround,
- * derive a readable name from the league's own event names instead:
+/** Last-resort fallback for when fetchRegionLeagues can't return a real name for
+ * a leagueCode (FTC's region-scoped v3 endpoints were broken for a while and
+ * occasionally hiccup even now — see fetchRegionLeagues in api/client.ts).
+ * Derives a readable name from the league's own event names instead:
  *   1. Prefer the League Tournament event's name, stripping a trailing
  *      "League Tournament" suffix and re-adding "League" (e.g. "East Bay
  *      League Tournament" -> "East Bay League").
  *   2. Otherwise use the longest common prefix across all the league's event
  *      names, trimmed of trailing separators/numbers (e.g. "Arrowhead Meet 1"
  *      / "Arrowhead Meet 2" -> "Arrowhead Meet").
- *   3. Otherwise fall back to the league code.
- * Remove this once FTC's region-scoped endpoints work again — see
- * fetchRegionLeagues in api/client.ts. */
+ *   3. Otherwise fall back to the league code. */
 export function deriveLeagueName(code: string, leagueEvents: ApiV3Event[]): string {
   const tourney = leagueEvents.find((e) => e.type === 'LEAGUE_TOURNAMENT')
   if (tourney) {
