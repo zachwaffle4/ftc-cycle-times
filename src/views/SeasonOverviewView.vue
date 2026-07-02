@@ -3,10 +3,11 @@ import { computed, onMounted, ref, watch } from 'vue'
 import AggregateEventTable from '../components/AggregateEventTable.vue'
 import CtByMonthChart from '../components/CtByMonthChart.vue'
 import DistributionChart from '../components/DistributionChart.vue'
+import RegionBreakdownTable from '../components/RegionBreakdownTable.vue'
 import ScheduleDeltaBarChart from '../components/ScheduleDeltaBarChart.vue'
 import StatsGrid from '../components/StatsGrid.vue'
-import { fetchSeasonEvents } from '../api/client'
-import type { ApiV3Event } from '../api/types'
+import { fetchRegions, fetchSeasonEvents } from '../api/client'
+import type { ApiV3Event, ApiV3Region } from '../api/types'
 import { useAggregateStats } from '../composables/useAggregateStats'
 import { exportAggCsv } from '../lib/csv'
 import { buildMonthlySeries } from '../lib/monthlySeries'
@@ -15,6 +16,7 @@ const props = defineProps<{ year: string }>()
 const cmpYear = computed(() => Number(props.year))
 
 const allEvents = ref<ApiV3Event[]>([])
+const regions = ref<ApiV3Region[]>([])
 const loadingEvents = ref(true)
 const eventsError = ref<string | null>(null)
 
@@ -22,7 +24,9 @@ async function loadEvents(): Promise<void> {
   loadingEvents.value = true
   eventsError.value = null
   try {
-    allEvents.value = await fetchSeasonEvents(cmpYear.value)
+    const [regionList, events] = await Promise.all([fetchRegions(cmpYear.value), fetchSeasonEvents(cmpYear.value)])
+    regions.value = regionList
+    allEvents.value = events
   } catch (e) {
     eventsError.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -53,6 +57,7 @@ const tableEntries = computed(() =>
 )
 
 const monthly = computed(() => buildMonthlySeries(includedEntries.value))
+const regionNames = computed(() => new Map(regions.value.map((r) => [r.code, r.name])))
 
 function onExport(): void {
   exportAggCsv(`${cmpYear.value}_season`, includedEntries.value)
@@ -86,6 +91,7 @@ function onExport(): void {
         <h2>Cycle Time by Month</h2>
         <CtByMonthChart :labels="monthly.labels" :actual-data="monthly.actualData" :median-data="monthly.medianData" :sched-data="monthly.schedData" />
       </div>
+      <RegionBreakdownTable :entries="includedEntries" :region-names="regionNames" :year="cmpYear" />
       <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px">
           <h2 style="margin-bottom: 0">By Event</h2>
