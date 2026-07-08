@@ -85,14 +85,37 @@ function iqrOutlierBounds(values: number[]): { lo: number; hi: number } {
 function processMatchGroup(matches: ApiV3Match[], phase: MatchPhase, attribution: CycleTimeAttribution): MatchRow[] {
   const sorted = [...matches].sort((a, b) => matchTournamentOrder(a) - matchTournamentOrder(b))
 
-  const rows: MatchRow[] = sorted.map((m, i) => {
-    const scheduled = toEpochSeconds(m.scheduledStartTime)
-    const actual = toEpochSeconds(m.startTime)
-    const postTime = toEpochSeconds(m.postTime)
+  const rawRows = sorted.map(m => ({
+    m,
+    scheduled: toEpochSeconds(m.scheduledStartTime),
+    actual: toEpochSeconds(m.startTime),
+    postTime: toEpochSeconds(m.postTime)
+  }))
+
+  // Fix FTCLive day-wrap bugs (where scheduled time has the wrong date relative to actual)
+  // 1. Anchor scheduled time to actual time if the match was played
+  for (const r of rawRows) {
+    if (r.scheduled != null && r.actual != null) {
+      let diff = r.scheduled - r.actual
+      while (diff < -12 * 3600) { r.scheduled += 24 * 3600; diff += 24 * 3600 }
+      while (diff > 12 * 3600) { r.scheduled -= 24 * 3600; diff -= 24 * 3600 }
+    }
+  }
+  
+  // 2. Fix unplayed matches relative to previous matches
+  for (let i = 1; i < rawRows.length; i++) {
+    if (rawRows[i].scheduled != null && rawRows[i-1].scheduled != null) {
+      let diff = rawRows[i].scheduled! - rawRows[i-1].scheduled!
+      while (diff < -12 * 3600) { rawRows[i].scheduled! += 24 * 3600; diff += 24 * 3600 }
+    }
+  }
+
+  const rows: MatchRow[] = rawRows.map((r, i) => {
+    const { m, scheduled, actual, postTime } = r
 
     let isPostBreak = i === 0
     if (i > 0) {
-      const prevScheduled = toEpochSeconds(sorted[i - 1].scheduledStartTime)
+      const prevScheduled = rawRows[i - 1].scheduled
       const schedGap = scheduled != null && prevScheduled != null ? scheduled - prevScheduled : null
       if (schedGap != null && schedGap > BREAK_GAP) isPostBreak = true
     }
